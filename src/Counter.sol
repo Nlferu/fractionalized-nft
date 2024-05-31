@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.21;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
+import {ERC721Enumerable, ERC721Votes} from "@openzeppelin/contracts/token/ERC721/extensions";
+import {ERC721, IERC721, IERC721Receiver} from "@openzeppelin/contracts/token/ERC721";
+import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 contract Auction is
     ERC721,
