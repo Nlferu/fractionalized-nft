@@ -8,6 +8,6 @@ contract AuctionTest is Test {
     Auction public auction;
 
     function setUp() public {
-        auction = new Auction();
+        auction = new Auction("Auctioner", "AUC");
     }
 }
