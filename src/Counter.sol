@@ -1,14 +1,61 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.21;
 
-contract Counter {
-    uint256 public number;
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-    function setNumber(uint256 newNumber) public {
-        number = newNumber;
+contract Auction is
+    ERC721,
+    ERC721Enumerable,
+    ERC721Votes,
+    IERC721Receiver,
+    ReentrancyGuard
+{
+    //Zmienne:
+    //...
+    //Available statuses:
+    //Scheduled = 1
+    //Open = 2 - aukcja gotowa na zakupy pNFT
+    //Closed = 3 - aukcja zakończona pozytywnie - wszystki pNFT wykupione
+    //Failed = 4 - aukcja zakończona negatywnie - nie wszystkie pNFT wykupione
+    //Finished = 5
+    //Archived = 6
+    //Only in status Open pieces can be minted (bought)
+    uint256 public status = 1;
+    //...
+    uint256 public closeTs; // - timestamp - zamknięcie aukcji
+    uint256 public openTs; // - timestamp - otwarcie aukcji
+    uint256 public available; // - timestamp - pozostała ilość pNFT
+    uint256 public total; // - timestamp - całkowita ilość pNFT
+    uint256 public price; // - cena pojedynczego pNFT
+    address[] tokenOwners; // - lista właścicieli
+    address payable public broker; // - adres brokera
+
+    //...
+    //code omitted
+    //...
+    function buy(uint256 no /*number of pieces to be minted (bought)*/) public {
+        //....
+        //Your code here
+        //....
     }
-
-    function increment() public {
-        number++;
-    }
+    //...
+    //code omitted
+    //...
 }
+
+// Założenia:
+// Napisac metodę buy(), przyjmuje ona tylko jeden argument "no" reprezentujący ilość kupowanych pieces NFT (pNFT) po cenie przechowywanej w zmiennej price.
+// Aby można było kupić, aukcja musi być w statusie Open, po openTs, a przed closeTs.
+// W przypadku próby kupienia bez spełnienia warunków powinnien być zwracany odpowiedni komunikat do wywołującego.
+// Podczas zakupu pNFT mają być mintowane oraz mieć od razu zdelegowane uprawienie do głosowania pNFT na kupującego.
+// W przypadku zmiany zmiennej available oraz status, aukcja powinna emitować odpowiednie informacje na blockchain.
+// Zakładamy, że zmienne są odpowiednio zainicjalizowane.
+// Po wykupieniu wszystkich dostępnych pNFT, status musi się zmienić na Closed (pozytywnie zakończona aukcja), oraz środki powinny być przetransferowane na adres Brokera.
+// Przy próbie zakupienia po closeTs, ale gdy pNFT nie są wszystkie wyprzedane, status musi się zmienić na Failed (negatywnie zakończona aukcja).
+// Po zmianie status na Failed środki powinny być przetransferowane z powrotem proporcjonalnie do kupujących.
