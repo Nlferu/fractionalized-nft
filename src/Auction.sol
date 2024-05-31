@@ -1,16 +1,17 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.21;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {ERC721Enumerable} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ERC721Votes} from "@openzeppelin/contracts/token/ERC721/extensions/ERC721Votes.sol";
 import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol"; // Overlap with ERC721
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
-contract Auction is ERC721, ERC721Enumerable, ERC721Votes {
+contract Auction is ERC721, ERC721Enumerable, Ownable, EIP712, ERC721Votes, ReentrancyGuard, IERC721Receiver {
     //Zmienne:
     //...
     //Available statuses:
@@ -33,7 +34,7 @@ contract Auction is ERC721, ERC721Enumerable, ERC721Votes {
 
     uint256[] private receivedTokens;
 
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) EIP712(name, symbol) {}
+    constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) EIP712(name, symbol) {}
 
     //...
     //code omitted
@@ -56,6 +57,12 @@ contract Auction is ERC721, ERC721Enumerable, ERC721Votes {
 
     function _increaseBalance(address account, uint128 value) internal override(ERC721, ERC721Enumerable, ERC721Votes) {
         super._increaseBalance(account, value);
+    }
+
+    function onERC721Received(address /* operator */, address /* from */, uint256 tokenId, bytes memory /* data */) public override returns (bytes4) {
+        receivedTokens.push(tokenId);
+
+        return this.onERC721Received.selector;
     }
 }
 
