@@ -6,8 +6,9 @@ import {Auctioner} from "../src/Auctioner.sol";
 
 contract AuctionerTest is Test {
     Auctioner public auctioner;
+    address payable broker;
 
     function setUp() public {
-        auctioner = new Auctioner("Auctioner", "AUC");
+        auctioner = new Auctioner("Auctioner", "AUC", broker);
     }
 }
