@@ -16,25 +16,6 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
     // TokenId of NFT that we want to fractionalize
     uint256 public tokenId;
 
-    // Owner of nft use this to transfer NFT to our contract
-    function initialize(address _collection, uint256 _tokenId, uint256 _amount) external onlyOwner {
-        collection = IERC721(_collection);
-        collection.safeTransferFrom(msg.sender, address(this), _tokenId);
-        tokenId = _tokenId;
-
-        // ERC20
-        _mint(msg.sender, _amount);
-    }
-
-    //Zmienne:
-    //...
-    //Available statuses:
-    //Scheduled = 1
-    //Open = 2 - aukcja gotowa na zakupy pNFT
-    //Closed = 3 - aukcja zakończona pozytywnie - wszystki pNFT wykupione
-    //Failed = 4 - aukcja zakończona negatywnie - nie wszystkie pNFT wykupione
-    //Finished = 5
-    //Archived = 6
     //Only in status Open pieces can be minted (bought)
     uint256 public status = 1;
     //...
@@ -46,9 +27,42 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
     address[] tokenOwners; // - lista właścicieli
     address payable public broker; // - adres brokera
 
-    uint256[] private receivedTokens;
+    /// @dev Enums
+    enum AuctionState {
+        SCHEDULED,
+        OPEN, // aukcja gotowa na zakupy pNFT
+        CLOSED, // aukcja zakończona pozytywnie - wszystki pNFT wykupione
+        FAILED, // aukcja zakończona negatywnie - nie wszystkie pNFT wykupione
+        FINISHED,
+        ARCHIVED
+    }
 
+    /// @dev Structs
+    struct Auction {
+        IERC721 s_collection; // Address of nft that we want to fractionalize
+        uint256 s_tokenId; // TokenId of NFT that we want to fractionalize
+    }
+
+    /// @dev Arrays
+    uint256[] private s_receivedTokens;
+
+    /// @dev Mappings
+    mapping(uint256 tokenId => Auction map) private auctions;
+
+    /// @dev Events
+
+    /// @dev Constructor
     constructor(string memory name, string memory symbol) Ownable(msg.sender) ERC20(name, symbol) ERC20Permit(name) {}
+
+    // Owner of nft use this to transfer NFT to our contract
+    function initialize(address _collection, uint256 _tokenId, uint256 _amount) external onlyOwner {
+        collection = IERC721(_collection);
+        collection.safeTransferFrom(msg.sender, address(this), _tokenId);
+        tokenId = _tokenId;
+
+        // ERC20
+        _mint(msg.sender, _amount);
+    }
 
     //...
     //code omitted
@@ -70,7 +84,7 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
     }
 
     function onERC721Received(address /* operator */, address /* from */, uint256 _tokenId, bytes memory /* data */) public override returns (bytes4) {
-        receivedTokens.push(_tokenId);
+        s_receivedTokens.push(_tokenId);
 
         return this.onERC721Received.selector;
     }
