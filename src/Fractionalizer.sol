@@ -14,8 +14,12 @@ contract Fractionalizer is ERC20, Ownable, ERC20Permit, ERC20Votes {
         _mint(to, amount);
     }
 
-    function burnFrom(address account, uint256 amount) external {
+    function burnFrom(address account, uint256 amount) external onlyOwner {
         _burn(account, amount);
+    }
+
+    function delegateVotes(address delegatee) external {
+        _delegate(delegatee, delegatee);
     }
 
     function _update(address from, address to, uint value) internal override(ERC20, ERC20Votes) {
