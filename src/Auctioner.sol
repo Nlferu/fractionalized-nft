@@ -11,11 +11,17 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Fractionalizer} from "./Fractionalizer.sol";
 
-contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, IERC721Receiver {
+contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
+    /// @dev Libraries
+    using Strings for uint256;
+    using Strings for address;
+
     /// @dev Errors
     error Auctioner__AuctionUnscheduled();
     error Auctioner__AuctionNotOpened();
     error Auctioner__InsufficientFractions();
+    error Auctioner__NotEnoughETH();
+    error Auctioner__TransferFailed();
 
     /// @dev Variables
     uint private s_totalAuctions;
@@ -31,7 +37,7 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
         OPEN, // auction ready to get orders for nft fractions
         CLOSED, // auction finished positively - all nft fractions bought
         FAILED, // auction finished negatively - not all nft fractions bought
-        FINISHED,
+        FINISHED, // UNUSED
         ARCHIVED
     }
 
@@ -40,12 +46,14 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
         address associatedCoin; // Address of associated erc20 contract
         IERC721 collection; // Address of nft that we want to fractionalize
         uint tokenId; // TokenId of NFT that we want to fractionalize
-        uint closeTs; // Timestamp - auction close
+        uint closeTs; // Timestamp - auction close -> CAUTION we can safely remove openTs as time left will be sufficient
         uint openTs; // Timestamp - auction open
-        uint available; // Timestamp - amount of nft fractions left for sale
-        uint total; // Timestamp - total of nft fractions
+        uint available; // Amount of nft fractions left for sale
+        uint total; // Total of nft fractions
         uint price; // Price of one nft fraction
+        uint payments; // Total ETH gathered
         address[] tokenOwners; // NFT owners array
+        mapping(address => uint) buyerToFunds; // It maps auction id to buyer address to funds he spent on purchase
         AuctionState auctionState; // Auction status
     }
 
@@ -54,9 +62,14 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
 
     /// @dev Events
     event AuctionCreated(uint indexed id, address collection, uint tokenId, uint indexed nftFractionsAmount, uint indexed price);
+    event Purchase(uint auction, address buyer, uint amount, uint available);
+    event FundsTransferredToBroker(uint indexed amount);
+    event AuctionStateChange(uint indexed auction, AuctionState indexed state);
+    event AuctionOpened(uint indexed openTime, uint indexed closeTime);
+    event AuctionRefund(address indexed buyer, uint indexed amount);
 
     /// @dev Constructor
-    constructor(string memory name, string memory symbol, address payable broker) Ownable(msg.sender) ERC20(name, symbol) ERC20Permit(name) {
+    constructor(address payable broker) Ownable(msg.sender) {
         i_broker = broker;
     }
 
@@ -64,7 +77,10 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
     function schedule(address _collection, uint _tokenId, uint _nftFractionsAmount, uint _price) external onlyOwner {
         Auction storage auction = s_auctions[s_totalAuctions];
 
-        Fractionalizer associated_erc20 = new Fractionalizer("xxx", "sad");
+        string memory collection = Strings.toHexString(_collection);
+        string memory token = Strings.toString(_tokenId);
+
+        Fractionalizer associated_erc20 = new Fractionalizer(collection, token);
         auction.associatedCoin = address(associated_erc20);
 
         auction.collection = IERC721(_collection);
@@ -75,43 +91,97 @@ contract Auctioner is ERC20, Ownable, ERC20Permit, ERC20Votes, ReentrancyGuard, 
         auction.available = _nftFractionsAmount;
         auction.price = _price;
 
+        emit AuctionCreated(s_totalAuctions, _collection, _tokenId, _nftFractionsAmount, _price);
+
         auction.auctionState = AuctionState.SCHEDULED;
 
-        emit AuctionCreated(s_totalAuctions, _collection, _tokenId, _nftFractionsAmount, _price);
+        emit AuctionStateChange(s_totalAuctions, auction.auctionState);
 
         s_totalAuctions += 1;
     }
 
+    // We as contract owner are allowed to open purchase for specific NFT
     function open(uint _auction) external onlyOwner {
         Auction storage auction = s_auctions[_auction];
         if (auction.auctionState != AuctionState.SCHEDULED) revert Auctioner__AuctionUnscheduled();
 
         auction.openTs = block.timestamp;
         auction.closeTs = block.timestamp + 30 days;
+
+        emit AuctionOpened(auction.openTs, auction.closeTs);
+
         auction.auctionState = AuctionState.OPEN;
+
+        emit AuctionStateChange(_auction, auction.auctionState);
     }
 
-    function buy(uint _auction, uint _no /*number of pieces to be minted (bought)*/) external nonReentrant {
+    // Allows user to buy fraction of NFT
+    function buy(uint _auction, uint _no) external payable nonReentrant {
         Auction storage auction = s_auctions[_auction];
         if (auction.auctionState != AuctionState.OPEN) revert Auctioner__AuctionNotOpened();
         if (auction.available < _no || _no == 0) revert Auctioner__InsufficientFractions();
+        if (msg.value < (_no * auction.price)) revert Auctioner__NotEnoughETH();
 
+        // Updating Auction struct
         auction.available -= _no;
-        auction.tokenOwners.push(msg.sender);
+        auction.payments += msg.value;
+        if (auction.buyerToFunds[msg.sender] == 0) auction.tokenOwners.push(msg.sender);
+        auction.buyerToFunds[msg.sender] += msg.value;
 
-        // ERC20 coins factory -> TO BE FIXED
-        _mint(msg.sender, _no);
+        // Mint the pNFTs to the buyer
+        Fractionalizer(auction.associatedCoin).mint(msg.sender, _no);
 
-        // ERC20
-        //_mint(msg.sender, _amount);
+        // Automatically delegate votes to the buyer
+        Fractionalizer(auction.associatedCoin).delegate(msg.sender);
+
+        emit Purchase(_auction, msg.sender, _no, auction.available);
+
+        if (auction.available == 0) {
+            auction.auctionState = AuctionState.CLOSED;
+
+            emit AuctionStateChange(_auction, auction.auctionState);
+
+            // Transfer funds to the broker
+            (bool success, ) = i_broker.call{value: auction.payments}("");
+            if (!success) revert Auctioner__TransferFailed();
+
+            emit FundsTransferredToBroker(auction.payments);
+        } else if (block.timestamp > auction.closeTs) {
+            auction.auctionState = AuctionState.FAILED;
+
+            emit AuctionStateChange(_auction, auction.auctionState);
+
+            // UNSAFE METHOD
+            refundBuyers(_auction);
+        }
     }
 
-    function _update(address from, address to, uint value) internal override(ERC20, ERC20Votes) {
-        super._update(from, to, value);
-    }
+    // Handles refunds if auction fails to sell all fractions in given time
+    function refundBuyers(uint _auction) internal {
+        Auction storage auction = s_auctions[_auction];
 
-    function nonces(address owner) public view override(ERC20Permit, Nonces) returns (uint) {
-        return super.nonces(owner);
+        for (uint i = 0; i < auction.tokenOwners.length; i++) {
+            address buyer = auction.tokenOwners[i];
+            uint amount = auction.buyerToFunds[buyer];
+
+            if (amount > 0) {
+                // Burn the pNFTs from the buyer
+                uint256 tokenBalance = Fractionalizer(auction.associatedCoin).balanceOf(buyer);
+                Fractionalizer(auction.associatedCoin).burnFrom(buyer, tokenBalance);
+
+                auction.buyerToFunds[buyer] = 0; // Prevent re-entrancy
+
+                // Refund the buyer
+                (bool success, ) = buyer.call{value: amount}("");
+                if (!success) revert Auctioner__TransferFailed();
+
+                emit AuctionRefund(buyer, amount);
+            }
+        }
+
+        auction.auctionState = AuctionState.ARCHIVED;
+
+        emit AuctionStateChange(_auction, auction.auctionState);
     }
 
     function onERC721Received(address /* operator */, address /* from */, uint _tokenId, bytes memory /* data */) public override returns (bytes4) {
