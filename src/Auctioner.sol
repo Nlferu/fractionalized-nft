@@ -81,6 +81,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
 
         Fractionalizer associated_erc20 = new Fractionalizer(collection, token);
         auction.associatedCoin = address(associated_erc20);
+        associated_erc20.transferOwnership(address(this));
 
         auction.collection = IERC721(_collection);
         auction.collection.safeTransferFrom(msg.sender, address(this), _tokenId);
@@ -133,7 +134,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
         Fractionalizer(auction.associatedCoin).mint(msg.sender, _no);
 
         // Automatically delegate votes to the buyer
-        Fractionalizer(auction.associatedCoin).delegate(msg.sender);
+        Fractionalizer(auction.associatedCoin).delegateVotes(msg.sender);
 
         emit Purchase(_auction, msg.sender, _no, auction.available);
 
