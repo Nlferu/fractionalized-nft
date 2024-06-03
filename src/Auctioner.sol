@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import {ERC20Votes} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@solmate/utils/ReentrancyGuard.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
@@ -11,6 +8,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Fractionalizer} from "./Fractionalizer.sol";
 
+// Owner of this contract will be Digitalizer
 contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
     /// @dev Libraries
     using Strings for uint256;
@@ -22,9 +20,10 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
     error Auctioner__InsufficientFractions();
     error Auctioner__NotEnoughETH();
     error Auctioner__TransferFailed();
+    error Auctioner__AuctionDoesNotExists();
 
     /// @dev Variables
-    uint private s_totalAuctions;
+    uint public s_totalAuctions;
     address payable immutable i_broker;
 
     /// @dev Arrays
@@ -102,6 +101,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
 
     // We as contract owner are allowed to open purchase for specific NFT
     function open(uint _auction) external onlyOwner {
+        if (_auction >= s_totalAuctions) revert Auctioner__AuctionDoesNotExists();
         Auction storage auction = s_auctions[_auction];
         if (auction.auctionState != AuctionState.SCHEDULED) revert Auctioner__AuctionUnscheduled();
 
@@ -117,6 +117,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
 
     // Allows user to buy fraction of NFT
     function buy(uint _auction, uint _no) external payable nonReentrant {
+        if (_auction >= s_totalAuctions) revert Auctioner__AuctionDoesNotExists();
         Auction storage auction = s_auctions[_auction];
         if (auction.auctionState != AuctionState.OPEN) revert Auctioner__AuctionNotOpened();
         if (auction.available < _no || _no == 0) revert Auctioner__InsufficientFractions();
@@ -188,6 +189,29 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
         s_receivedTokens.push(_tokenId);
 
         return this.onERC721Received.selector;
+    }
+
+    function getAuctionData(uint _auction) external view returns (address, IERC721, uint, uint, uint, uint, uint, uint, uint, address[] memory, AuctionState) {
+        if (_auction >= s_totalAuctions) revert Auctioner__AuctionDoesNotExists();
+        Auction storage auction = s_auctions[_auction];
+
+        return (
+            auction.associatedCoin,
+            auction.collection,
+            auction.tokenId,
+            auction.closeTs,
+            auction.openTs,
+            auction.available,
+            auction.total,
+            auction.price,
+            auction.payments,
+            auction.tokenOwners,
+            auction.auctionState
+        );
+    }
+
+    function getReceivedTokens() external view returns (uint[] memory) {
+        return s_receivedTokens;
     }
 }
 
