@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test, console} from "forge-std/Test.sol";
 import {Auctioner} from "../src/Auctioner.sol";
 import {Digitalizer} from "../src/Digitalizer.sol";
+import {Fractionalizer} from "../src/Fractionalizer.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract AuctionerTest is Test {
@@ -131,5 +132,16 @@ contract AuctionerTest is Test {
         emit Purchase(0, USER, 3, 97);
         vm.prank(USER);
         auctioner.buy{value: 1.5 ether}(0, 3);
+
+        uint votes = Fractionalizer(assoCoin).getVotes(USER);
+
+        assertEq(votes, 3);
+
+        vm.prank(address(auctioner));
+        Fractionalizer(assoCoin).burnFrom(USER, 1);
+
+        uint votes2 = Fractionalizer(assoCoin).getVotes(USER);
+
+        console.log("Votes 2: ", votes2);
     }
 }
