@@ -62,7 +62,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
     /// @dev Events
     event AuctionCreated(uint indexed id, address collection, uint tokenId, uint indexed nftFractionsAmount, uint indexed price);
     event Purchase(uint auction, address buyer, uint amount, uint available);
-    event FundsTransferredToBroker(uint indexed amount);
+    event FundsTransferredToBroker(uint indexed auction, uint indexed amount);
     event AuctionStateChange(uint indexed auction, AuctionState indexed state);
     event AuctionOpened(uint indexed openTime, uint indexed closeTime);
     event AuctionRefund(address indexed buyer, uint indexed amount);
@@ -147,7 +147,7 @@ contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
             (bool success, ) = i_broker.call{value: auction.payments}("");
             if (!success) revert Auctioner__TransferFailed();
 
-            emit FundsTransferredToBroker(auction.payments);
+            emit FundsTransferredToBroker(_auction, auction.payments);
         } else if (block.timestamp > auction.closeTs) {
             auction.auctionState = AuctionState.FAILED;
 
