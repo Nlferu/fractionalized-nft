@@ -11,7 +11,7 @@ contract AuctionerTest is Test {
     /// @dev Events
     event AuctionCreated(uint indexed id, address collection, uint tokenId, uint indexed nftFractionsAmount, uint indexed price);
     event Purchase(uint auction, address buyer, uint amount, uint available);
-    event FundsTransferredToBroker(uint indexed amount);
+    event FundsTransferredToBroker(uint indexed auction, uint indexed amount);
     event AuctionStateChange(uint indexed auction, AuctionState indexed state);
     event AuctionOpened(uint indexed openTime, uint indexed closeTime);
     event AuctionRefund(address indexed buyer, uint indexed amount);
@@ -33,6 +33,7 @@ contract AuctionerTest is Test {
     address private OWNER = makeAddr("owner");
     address private BROKER = makeAddr("broker");
     address private USER = makeAddr("user");
+    address private USER_TWO = makeAddr("user_two");
     uint256 private constant STARTING_BALANCE = 100 ether;
 
     address private assoCoin = 0xf801f3A6F4e09F82D6008505C67a0A5b39842406;
@@ -40,6 +41,7 @@ contract AuctionerTest is Test {
     function setUp() public {
         deal(OWNER, STARTING_BALANCE);
         deal(USER, STARTING_BALANCE);
+        deal(USER_TWO, STARTING_BALANCE);
 
         vm.startPrank(OWNER);
         auctioner = new Auctioner(payable(BROKER));
@@ -56,6 +58,7 @@ contract AuctionerTest is Test {
     function test_canInitializeAuction() public {
         vm.expectEmit(true, true, true, true, address(auctioner));
         emit AuctionCreated(0, address(digitalizer), 1, 100, 0.5 ether);
+        vm.expectEmit(true, true, true, true, address(auctioner));
         emit AuctionStateChange(0, AuctionState.SCHEDULED);
         vm.prank(OWNER);
         digitalizer.initialize(1, 100, 0.5 ether);
@@ -100,6 +103,7 @@ contract AuctionerTest is Test {
 
         vm.expectEmit(true, true, true, true, address(auctioner));
         emit AuctionOpened(block.timestamp, block.timestamp + 30 days);
+        vm.expectEmit(true, true, true, true, address(auctioner));
         emit AuctionStateChange(0, AuctionState.OPEN);
         vm.prank(address(digitalizer));
         auctioner.open(0);
@@ -133,15 +137,66 @@ contract AuctionerTest is Test {
         vm.prank(USER);
         auctioner.buy{value: 1.5 ether}(0, 3);
 
+        vm.prank(USER);
+        auctioner.buy{value: 0.5 ether}(0, 1);
+
         uint votes = Fractionalizer(assoCoin).getVotes(USER);
 
-        assertEq(votes, 3);
+        assertEq(votes, 4);
 
-        vm.prank(address(auctioner));
-        Fractionalizer(assoCoin).burnFrom(USER, 1);
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit AuctionStateChange(0, AuctionState.CLOSED);
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit FundsTransferredToBroker(0, 50 ether);
+        vm.prank(USER_TWO);
+        auctioner.buy{value: 48 ether}(0, 96);
 
-        uint votes2 = Fractionalizer(assoCoin).getVotes(USER);
+        uint votes2 = Fractionalizer(assoCoin).getVotes(USER_TWO);
 
-        console.log("Votes 2: ", votes2);
+        assertEq(votes2, 96);
+    }
+
+    function test_canFailAuctionIfTimePassed() public {
+        uint user_balance;
+        uint user_two_balance;
+
+        user_balance = USER.balance;
+        user_two_balance = USER_TWO.balance;
+        assertEq(user_balance, 100 ether);
+        assertEq(user_two_balance, 100 ether);
+
+        vm.prank(OWNER);
+        digitalizer.initialize(1, 100, 0.5 ether);
+
+        vm.prank(address(digitalizer));
+        auctioner.open(0);
+
+        vm.prank(USER);
+        auctioner.buy{value: 1.5 ether}(0, 3);
+
+        vm.warp(block.timestamp + 30 days + 1);
+        vm.roll(block.number + 1);
+
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit AuctionStateChange(0, AuctionState.FAILED);
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit AuctionRefund(USER, 1.5 ether);
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit AuctionRefund(USER_TWO, 20 ether);
+        vm.expectEmit(true, true, true, true, address(auctioner));
+        emit AuctionStateChange(0, AuctionState.ARCHIVED);
+        vm.prank(USER_TWO);
+        auctioner.buy{value: 20 ether}(0, 40);
+
+        user_balance = USER.balance;
+        user_two_balance = USER_TWO.balance;
+        assertEq(user_balance, 100 ether);
+        assertEq(user_two_balance, 100 ether);
+
+        uint votes = Fractionalizer(assoCoin).getVotes(USER);
+        uint votes2 = Fractionalizer(assoCoin).getVotes(USER_TWO);
+
+        assertEq(votes, 0);
+        assertEq(votes2, 0);
     }
 }
