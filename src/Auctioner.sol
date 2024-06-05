@@ -8,7 +8,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {Fractionalizer} from "./Fractionalizer.sol";
 
-// Owner of this contract will be Digitalizer
+// Owner of this contract is Digitalizer
 contract Auctioner is Ownable, ReentrancyGuard, IERC721Receiver {
     /// @dev Libraries
     using Strings for uint256;
